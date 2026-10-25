@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SENTINEL-FX</title>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--tx:#1b2430;--mut:#667085;--bd:#dfe3ea;--ac:#2563eb;--ok:#15803d;--bad:#b91c1c;--chip:#eef2f7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1117;--card:#171b24;--tx:#e8ecf2;--mut:#98a2b3;--bd:#2a3140;--ac:#60a5fa;--ok:#4ade80;--bad:#f87171;--chip:#232a38}}
+:root[data-theme="dark"]{--bg:#0e1117;--card:#171b24;--tx:#e8ecf2;--mut:#98a2b3;--bd:#2a3140;--ac:#60a5fa;--ok:#4ade80;--bad:#f87171;--chip:#232a38}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--bg)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:1.6rem;margin:.2em 0}h2{font-size:1.15rem;margin:0 0 10px}h3{font-size:.95rem;margin:14px 0 6px}
+.mut{color:var(--mut)}.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.m{background:var(--chip);border-radius:10px;padding:10px 12px}.m b{display:block;font-size:1.4rem}.m span{color:var(--mut);font-size:.8rem}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
+label{display:flex;flex-direction:column;font-size:.8rem;color:var(--mut);gap:3px}
+input,select,button,textarea{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:7px 10px}
+button{background:var(--ac);color:#fff;border:0;cursor:pointer}button.alt{background:var(--chip);color:var(--tx)}
+.wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}td.ex{white-space:normal;min-width:240px}
+td.n,th.n{text-align:right}.pos{color:var(--ok)}.neg{color:var(--bad)}
+.b{padding:2px 8px;border-radius:99px;font-size:.75rem;background:var(--chip)}
+.High{background:var(--bad);color:#fff}.Medium{background:#f59e0b;color:#111}.Low{background:#facc15;color:#111}
+.chips label{flex-direction:row;align-items:center;color:var(--tx);background:var(--chip);padding:4px 10px;border-radius:99px}
+.ok{color:var(--ok)}.er{color:var(--bad)}svg{width:100%;height:auto;display:block}svg text{fill:var(--tx);font-size:11px}
+</style>
+</head>
+<body>
+<main>
+<h1>🔎 SENTINEL-FX: Mule-Account Detection</h1>
+<p class="mut">Explainable transaction screening and account-network analysis. Alerts are indicators for investigation, not proof of wrongdoing.</p>
+
+<section class="card"><h2>Input data</h2>
+<div class="row"><label>Upload transaction CSV (sender, receiver, amount, timestamp)<input type="file" id="file" accept=".csv"></label>
+<button id="sample" class="alt">Use sample data</button><button id="reset" class="alt">Remove added transactions</button></div>
+<p id="msg"></p><details id="rej"></details>
+<h3>Detection settings</h3>
+<div class="grid">
+<label>High-value threshold<input id="hv" type="number" value="10000" min="1"></label>
+<label>Fan-in: minimum senders<input id="ms" type="number" value="3" min="2"></label>
+<label>Fan-in window (hours)<input id="fw" type="number" value="24" min="1"></label>
+<label>Rapid onward window (hours)<input id="rw" type="number" value="2" min="1"></label>
+<label>Pass-through ratio<input id="pr" type="number" value="0.5" min="0.05" max="1" step="0.05"></label>
+</div></section>
+
+<section><h2>Investigation summary</h2><div class="grid" id="metrics"></div></section>
+
+<section class="card"><h2>Account dashboard: deposits, withdrawals and balance</h2>
+<div class="grid" id="totals"></div>
+<h3>Add a transaction</h3>
+<div class="row">
+<label>Type<select id="ty"><option value="deposit">Deposit</option><option value="withdraw">Withdrawal</option><option value="transfer">Transfer</option></select></label>
+<label id="l1"><span id="t1">Account</span><input id="a1" placeholder="e.g. Acc_A"></label>
+<label id="l2" hidden>To account<input id="a2" placeholder="e.g. Acc_B"></label>
+<label>Amount<input id="am" type="number" min="0" step="0.01" placeholder="0.00"></label>
+<button id="add">Add</button></div>
+<p class="mut">Deposits are money received, withdrawals are money sent, and balance is deposits minus withdrawals from the loaded data (opening balance 0). Added transactions use the current time and are screened by the same rules.</p>
+<div class="wrap"><table id="bal"></table></div></section>
+
+<section class="card"><h2>Transaction screening &amp; alerts</h2>
+<div class="row chips" id="chips"></div>
+<div class="wrap" style="margin-top:10px"><table id="tx"></table></div></section>
+
+<section class="card"><h2>Account flow visualization</h2><div id="graph"></div></section>
+
+<section class="card"><h2>Export results</h2>
+<button id="exp">Export results as CSV</button>
+<p class="mut">If the download does not start in this view, copy the text below.</p>
+<textarea id="csv" readonly rows="4" style="width:100%;display:none"></textarea></section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:2});
+const sample=()=>{const S=["Acc_A","Acc_B","Acc_C","Acc_Mule","Acc_Mule","Acc_D","Acc_E"],R=["Acc_Mule","Acc_Mule","Acc_Mule","Acc_X","Acc_Y","Acc_F","Acc_G"],A=[5000,4500,6000,15000,20000,500,12000],T=["10:00:00","10:15:00","10:30:00","11:00:00","11:05:00","12:00:00","13:00:00"];
+return S.map((s,i)=>({sender:s,receiver:R[i],amount:A[i],timestamp:"2026-10-24 "+T[i],src:i+2}))};
+let base=sample(),extra=[],res=[],shown=new Set(["Low","Medium","High"]);
+
+function parseCSV(t){t=t.replace(/^\uFEFF/,"");const rows=[];let r=[],f="",q=false;
+for(let i=0;i<t.length;i++){const c=t[i];
+if(q){if(c=='"'){if(t[i+1]=='"'){f+='"';i++}else q=false}else f+=c}
+else if(c=='"')q=true;else if(c==","){r.push(f);f=""}
+else if(c=="\n"||c=="\r"){if(c=="\r"&&t[i+1]=="\n")i++;r.push(f);f="";rows.push(r);r=[]}else f+=c}
+if(f||r.length){r.push(f);rows.push(r)}return rows.filter(x=>x.some(v=>v.trim()))}
+
+function pt(v){let s=String(v??"").trim();if(!s)return NaN;
+if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(s))s=s.replace(" ","T")+"Z";return Date.parse(s)}
+
+function validate(rows){const seen=new Set(),clean=[],rej=[];
+for(const r of rows){const s=String(r.sender??"").trim().toUpperCase(),d=String(r.receiver??"").trim().toUpperCase(),
+a=String(r.amount??"").trim()===""?NaN:Number(r.amount),t=pt(r.timestamp),why=[];
+if(!s)why.push("missing sender");if(!d)why.push("missing receiver");
+if(isNaN(a))why.push("invalid amount");else if(a<=0)why.push("amount must be > 0");
+if(isNaN(t))why.push("invalid timestamp");if(s&&s===d)why.push("self-transfer");
+if(!why.length){const k=[s,d,a,t].join("|");if(seen.has(k))why.push("duplicate row");seen.add(k)}
+if(why.length)rej.push({line:r.src,sender:r.sender,receiver:r.receiver,amount:r.amount,timestamp:r.timestamp,reason:why.join("; ")});
+else clean.push({sender:s,receiver:d,amount:a,t,score:0,why:[]})}
+return{clean,rej}}
+
+function analyze(tx,p){
+tx.forEach(x=>{if(x.amount>p.hv){x.score+=50;x.why.push(`High-value transfer (>${fmt(p.hv)}).`)}});
+const by={};tx.forEach(x=>(by[x.receiver]??=[]).push(x));const fan=new Set();
+for(const g of Object.values(by)){if(new Set(g.map(x=>x.sender)).size<p.ms)continue;g.sort((a,b)=>a.t-b.t);
+for(let i=0;i<g.length;i++){let j=i;while(j<g.length&&g[j].t-g[i].t<=p.fw*36e5)j++;
+const w=g.slice(i,j);if(new Set(w.map(x=>x.sender)).size>=p.ms)w.forEach(x=>fan.add(x))}}
+fan.forEach(x=>{x.score+=30;x.why.push(`Recipient receives from ${p.ms}+ distinct senders within ${p.fw}h.`)});
+const ord=[...tx].sort((a,b)=>a.t-b.t),rec={};let i=0;
+while(i<ord.length){let j=i;while(j<ord.length&&ord[j].t==ord[i].t)j++;const batch=ord.slice(i,j),t=ord[i].t;
+for(const x of batch){const q=(rec[x.sender]??=[]);while(q.length&&q[0][0]<t-p.rw*36e5)q.shift();
+if(q.length&&q.reduce((s,y)=>s+y[1],0)>=p.pr*x.amount){x.score+=40;x.why.push(`Rapid onward movement: sender received funds within the previous ${p.rw}h covering at least ${Math.round(p.pr*100)}% of this transfer.`)}}
+for(const x of batch)(rec[x.receiver]??=[]).push([t,x.amount]);i=j}
+tx.forEach(x=>{x.level=x.score==0?"Normal":x.score<40?"Low":x.score<70?"Medium":"High";x.exp=x.why.join(" ")||"No configured rule triggered."});
+return tx.sort((a,b)=>b.score-a.score||a.t-b.t)}
+
+const P=()=>({hv:+$("hv").value||10000,ms:Math.max(2,+$("ms").value||3),fw:+$("fw").value||24,rw:+$("rw").value||2,pr:Math.min(1,Math.max(.05,+$("pr").value||.5))});
+const M=(l,v,c="")=>`<div class="m"><b class="${c}">${v}</b><span>${l}</span></div>`;
+const iso=t=>new Date(t).toISOString().replace(".000Z","Z");
+
+function run(){const {clean,rej}=validate(base.concat(extra));
+$("rej").innerHTML=rej.length?`<summary>Rejected rows (${rej.length})</summary><div class="wrap"><table><tr><th>Line</th><th>Sender</th><th>Receiver</th><th>Amount</th><th>Timestamp</th><th>Reason</th></tr>${rej.map(r=>`<tr><td>${esc(r.line)}</td><td>${esc(r.sender??"")}</td><td>${esc(r.receiver??"")}</td><td>${esc(r.amount??"")}</td><td>${esc(r.timestamp??"")}</td><td class="er">${esc(r.reason)}</td></tr>`).join("")}</table></div>`:"";
+if(!clean.length){res=[];$("msg").className="er";$("msg").textContent="No valid transactions found in the input.";draw();return}
+$("msg").className="ok";$("msg").textContent=`Validation successful. Accepted: ${clean.length}, rejected: ${rej.length}`;
+res=analyze(clean,P());draw()}
+
+function draw(){
+const fl=res.filter(x=>x.score>0).length,hi=res.filter(x=>x.level=="High").length,mx=res.reduce((m,x)=>Math.max(m,x.score),0);
+$("metrics").innerHTML=M("Valid transactions",res.length)+M("Flagged transactions",fl)+M("High-risk transactions",hi)+M("Highest risk score",mx);
+// balances
+const acc={},risk={};
+for(const x of res){const a=(acc[x.sender]??={dep:0,wd:0}),b=(acc[x.receiver]??={dep:0,wd:0});a.wd+=x.amount;b.dep+=x.amount;
+for(const n of[x.sender,x.receiver])risk[n]=Math.max(risk[n]||0,x.score)}
+delete acc.EXTERNAL;const names=Object.keys(acc).sort();
+let D=0,W=0;names.forEach(n=>{D+=acc[n].dep;W+=acc[n].wd});
+$("totals").innerHTML=M("Total deposits (all accounts)",fmt(D),"pos")+M("Total withdrawals (all accounts)",fmt(W),"neg")+M("Net balance",fmt(D-W),D-W>=0?"pos":"neg")+M("Accounts",names.length);
+$("bal").innerHTML=`<tr><th>Account</th><th class="n">Deposits</th><th class="n">Withdrawals</th><th class="n">Balance</th><th class="n">Max risk</th></tr>`+
+names.map(n=>{const a=acc[n],b=a.dep-a.wd;return`<tr><td>${esc(n)}</td><td class="n pos">${fmt(a.dep)}</td><td class="n neg">${fmt(a.wd)}</td><td class="n ${b>=0?"pos":"neg"}">${fmt(b)}</td><td class="n">${risk[n]||0}</td></tr>`}).join("");
+// chips + table
+$("chips").innerHTML=["Normal","Low","Medium","High"].map(l=>`<label><input type="checkbox" data-l="${l}" ${shown.has(l)?"checked":""}>${l}</label>`).join("");
+$("chips").querySelectorAll("input").forEach(i=>i.onchange=()=>{i.checked?shown.add(i.dataset.l):shown.delete(i.dataset.l);draw()});
+const rows=res.filter(x=>shown.has(x.level));
+$("tx").innerHTML=`<tr><th>Sender</th><th>Receiver</th><th class="n">Amount</th><th>Timestamp</th><th class="n">Score</th><th>Risk</th><th>Explanation</th></tr>`+
+rows.slice(0,500).map(x=>`<tr><td>${esc(x.sender)}</td><td>${esc(x.receiver)}</td><td class="n">${fmt(x.amount)}</td><td>${iso(x.t)}</td><td class="n">${x.score}</td><td><span class="b ${x.level}">${x.level}</span></td><td class="ex">${esc(x.exp)}</td></tr>`).join("")+
+(rows.length>500?`<tr><td colspan="7" class="mut">Showing the first 500 of ${rows.length} rows. Export for the full list.</td></tr>`:"");
+graph(risk)}
+
+function graph(risk){
+if(!res.length){$("graph").innerHTML='<p class="mut">No account relationships to display.</p>';return}
+const E={};for(const x of res){const k=x.sender+">"+x.receiver;(E[k]??={s:x.sender,d:x.receiver,amt:0,n:0});E[k].amt+=x.amount;E[k].n++}
+let nodes=Object.keys(risk).sort((a,b)=>risk[b]-risk[a]);const trunc=nodes.length>100;nodes=nodes.slice(0,100);
+const W=720,H=440,Q={};nodes.forEach((n,i)=>{const a=2*Math.PI*i/nodes.length;Q[n]={x:W/2+Math.cos(a)*W/3,y:H/2+Math.sin(a)*H/3,dx:0,dy:0,deg:0}});
+const es=Object.values(E).filter(e=>Q[e.s]&&Q[e.d]);es.forEach(e=>{Q[e.s].deg++;Q[e.d].deg++});
+const k=Math.sqrt(W*H/nodes.length)*.6;
+for(let it=0;it<250;it++){const c=1-it/250;nodes.forEach(a=>{Q[a].dx=0;Q[a].dy=0});
+for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const u=Q[nodes[i]],v=Q[nodes[j]];let dx=u.x-v.x,dy=u.y-v.y,d=Math.hypot(dx,dy)||.01,f=k*k/d;u.dx+=dx/d*f;u.dy+=dy/d*f;v.dx-=dx/d*f;v.dy-=dy/d*f}
+for(const e of es){const u=Q[e.s],v=Q[e.d];let dx=u.x-v.x,dy=u.y-v.y,d=Math.hypot(dx,dy)||.01,f=d*d/k;u.dx-=dx/d*f;u.dy-=dy/d*f;v.dx+=dx/d*f;v.dy+=dy/d*f}
+for(const a of nodes){const p=Q[a];p.dx+=(W/2-p.x)*.05;p.dy+=(H/2-p.y)*.05;const d=Math.hypot(p.dx,p.dy)||1,m=Math.min(d,30*c+1);
+p.x=Math.min(W-45,Math.max(45,p.x+p.dx/d*m));p.y=Math.min(H-30,Math.max(20,p.y+p.dy/d*m))}}
+const r=n=>Math.min(22,8+2*Q[n].deg);
+let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Account relationship graph"><defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8a94a6"/></marker></defs>`;
+for(const e of es){const u=Q[e.s],v=Q[e.d],dx=v.x-u.x,dy=v.y-u.y,d=Math.hypot(dx,dy)||1,o=r(e.d)+3;
+s+=`<line x1="${u.x}" y1="${u.y}" x2="${v.x-dx/d*o}" y2="${v.y-dy/d*o}" stroke="#8a94a6" stroke-width="1.4" marker-end="url(#ar)"><title>${esc(e.s)} → ${esc(e.d)}\nTotal: ${fmt(e.amt)}\nCount: ${e.n}</title></line>`}
+for(const n of nodes){const p=Q[n];s+=`<g><circle cx="${p.x}" cy="${p.y}" r="${r(n)}" fill="hsl(${200-2*Math.min(100,risk[n])},70%,55%)" stroke="#264653" stroke-width="1.5"><title>${esc(n)}\nMax risk score: ${risk[n]}</title></circle><text x="${p.x}" y="${p.y+r(n)+12}" text-anchor="middle">${esc(n)}</text></g>`}
+$("graph").innerHTML=s+"</svg><p class='mut'>Arrows show direction of funds. Node colour goes from blue (low) to red (high) by highest risk score."+(trunc?" Showing the top 100 accounts by risk.":"")+"</p>"}
+
+// export with CSV-injection protection
+function cell(v){v=String(v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+$("exp").onclick=()=>{const L=["sender,receiver,amount,timestamp,score,risk_level,explanation"].concat(res.map(x=>[x.sender,x.receiver,x.amount,iso(x.t),x.score,x.level,x.exp].map(cell).join(",")));
+const csv=L.join("\n"),ta=$("csv");ta.style.display="block";ta.value=csv;
+try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="sentinel_fx_results.csv";a.click()}catch(e){}
+try{navigator.clipboard.writeText(csv)}catch(e){}}
+
+$("file").onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+rd.onload=()=>{const t=parseCSV(String(rd.result));if(t.length<1){$("msg").className="er";$("msg").textContent="The CSV is empty.";return}
+const h=t[0].map(x=>x.trim().toLowerCase()),need=["sender","receiver","amount","timestamp"],miss=need.filter(c=>!h.includes(c));
+if(miss.length){$("msg").className="er";$("msg").textContent="Missing required columns: "+miss.join(", ");return}
+base=t.slice(1).map((r,i)=>{const o={src:i+2};need.forEach(c=>o[c]=r[h.indexOf(c)]);return o});extra=[];run()};rd.readAsText(f)};
+$("sample").onclick=()=>{base=sample();extra=[];$("file").value="";run()};
+$("reset").onclick=()=>{extra=[];run()};
+$("ty").onchange=()=>{const t=$("ty").value;$("l2").hidden=t!="transfer";$("t1").textContent=t=="transfer"?"From account":"Account"};
+$("add").onclick=()=>{const t=$("ty").value,a=$("a1").value.trim(),b=$("a2").value.trim();let s,d;
+if(t=="deposit"){s="EXTERNAL";d=a}else if(t=="withdraw"){s=a;d="EXTERNAL"}else{s=a;d=b}
+extra.push({sender:s,receiver:d,amount:$("am").value,timestamp:new Date().toISOString(),src:"added"});run();$("am").value=""};
+["hv","ms","fw","rw","pr"].forEach(i=>$(i).oninput=run);
+run();
+</script>
+</body>
+</html>
